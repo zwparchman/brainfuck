@@ -7,6 +7,9 @@
 #include <sstream>
 #include <thread>
 #include <future>
+#include <memory>
+
+
 using namespace std;
 
 
@@ -210,8 +213,8 @@ string streamAsString( istream &is ){
 
 istringstream ss;
 void doMulti ( const vector<string> &args ) {
-  vector<ifstream> files;
-  vector<ofstream> ofiles;
+  vector<unique_ptr<ifstream> > files;
+  vector<unique_ptr<ofstream> > ofiles;
   vector< bf > bfs;
   vector< future<void> > fut ;
 
@@ -221,10 +224,10 @@ void doMulti ( const vector<string> &args ) {
   fut.reserve( args.size() ) ;
 
   for( const auto &s : args ){
-    files.emplace_back( ifstream( s ));
-    ofiles.emplace_back( ofstream( s+".bfout" ));
-    string lines = streamAsString( files.back() );
-    bf b ( ofiles.back() , ss );
+    files.emplace_back( make_unique<ifstream>( s ) );
+    ofiles.emplace_back( make_unique<ofstream>( (s+".bfout").c_str() ) );
+    string lines = streamAsString( *files.back() );
+    bf b ( *ofiles.back() , ss );
     b.compile( lines );
 
     fut.push_back( async( 
