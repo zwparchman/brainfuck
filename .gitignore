@@ -4,3 +4,4 @@ nimcache
 bf
 bfc
 *.exe
+*.pyc

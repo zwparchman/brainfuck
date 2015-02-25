@@ -1,3 +1,5 @@
+#include <iomanip>
+#include <assert.h>
 #include <iostream>
 #include <vector>
 #include <cstdint>
@@ -9,7 +11,7 @@
 #include <future>
 #include <memory>
 #include <cstdlib>
-
+#include <algorithm>
 
 using namespace std;
 
@@ -24,13 +26,56 @@ struct bf{
     IN,
     OUT,
     OPEN,
-    CLOSE
+    CLOSE,
+    ZERO_CELL,
+    INVALID
   };
 
+  struct Ins{
+    Instructions val;
+    int count;
+
+    Ins( Instructions v ): val( v ), count(1) {}
+    Ins( Instructions v , int c): val( v ), count(c) {}
+
+    string toString(){
+      string ret = "";
+      switch( val ){
+        case Instructions::PLUS: ret+= "PLUS"; break;
+        case Instructions::MINUS: ret+= "MINUS"; break;
+        case Instructions::INC: ret+= "INC"; break;
+        case Instructions::DEC: ret+= "DEC"; break;
+        case Instructions::IN: ret+= "IN"; break;
+        case Instructions::OUT: ret+= "OUT"; break;
+        case Instructions::OPEN: ret+= "OPEN"; break;
+        case Instructions::CLOSE: ret+= "CLOSE"; break;
+        case Instructions::ZERO_CELL: ret += "ZERO_CELL";break;
+        case Instructions::INVALID: ret+= "INVALID";break;
+      }
+      ret+= " "+ to_string( count );
+
+      return ret;
+    }
+
+    bool operator==( Ins const that ){
+      if ( that.val == val && that.count == count ){
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    bool operator!= ( Ins const that ){
+      return ! ( (*this) == that );
+    }
+
+  };
+
+  
 
   vector<uint8_t> tape;
   vector<long int> loopStack;
-  vector<Instructions> instructions;
+  vector<Ins> instructions;
 
   long int ip=0;
 
@@ -66,56 +111,161 @@ struct bf{
     }
   }
 
+  void dumpInstructions(){
+    cout<<"Instruction Dump"<<endl;
+    for( size_t i=0; i<instructions.size(); i ++ ){
+      cout<<setw( 4 )<< i <<" "<< instructions[i].toString() << endl;
+    }
+  }
+
+  void collapseRuns(){
+    auto colapse = [](Instructions i ){
+      switch ( i ){
+        case Instructions::PLUS:
+        case Instructions::MINUS:
+        case Instructions::DEC:
+        case Instructions::INC:
+          return true;
+        default:
+          return false;
+      }
+    };
+
+    vector<Ins> temp;
+    temp.reserve( instructions.size() );
+
+    Ins last = instructions.front();
+    last.count = 0;
+
+    for( auto i : instructions ){
+      if( ! colapse( i.val ) ){
+        temp.push_back( last );
+        last = i;
+        continue;
+      }
+
+      if( i.val == last.val ){
+        last.count += i.count ;
+      } else {
+        temp.push_back( last );
+        last = i;
+      }
+    }
+
+    temp.push_back( last );
+
+    instructions = move( temp );
+  }
+  void find_zero_cell_opertunities(){
+    decltype( instructions ) temp;
+    temp.reserve( instructions.size() );
+
+    auto here = instructions.begin();
+    auto where = instructions.begin();
+    auto end = instructions.end();
+
+    Ins opn( Instructions::OPEN,1 );
+    Ins min( Instructions::MINUS,1 );
+    Ins pls( Instructions::PLUS,1 );
+    Ins cls( Instructions::CLOSE,1 );
+    while( true ){
+      where = std::find( here, end,  opn );
+      temp.insert( temp.end() , here, where );
+      if( where == end ) break;
+      if( 
+          ( where + 1) == end || ( *(where+1) != min && *(where+1) != pls ) || 
+          ( where + 2) == end || *(where+2) != cls ){
+        where += 1;
+      } else {
+        //else we have something that can be replaced
+        temp.push_back( Ins(Instructions::ZERO_CELL, 1 ) );
+        where += 2;
+      }
+      here = where;
+    }
+  }
+
+  void removeZeroCount(){
+    decltype( instructions ) temp;
+    temp.reserve( instructions.size() );
+
+    for ( auto i : instructions ){
+      if( i.count > 0 ){
+        temp.push_back( i );
+      }
+    }
+    instructions = move( temp );
+
+  }
+
+  //optimize the bf instructions
+  void optimize(){
+    if( instructions.size() == 0 ){ return; }
+
+    collapseRuns();
+    find_zero_cell_opertunities();
+    removeZeroCount();
+  }
+
   void run(){
     if( instructions.empty() ){
       return;
     }
     while( !die ){
-      switch(instructions[ip]){
-        case Instructions::PLUS : plus() ; break;
-        case Instructions::MINUS : minus() ; break;
-        case Instructions::INC : inc() ; break;
-        case Instructions::DEC : dec() ; break;
-        case Instructions::OUT : out() ; break;
-        case Instructions::IN : in() ; break;
-        case Instructions::OPEN : open() ; break;
-        case Instructions::CLOSE : close() ; break;
+      switch(instructions[ip].val){
+        case Instructions::PLUS : plus( instructions[ip].count ) ; break;
+        case Instructions::MINUS : minus( instructions[ip].count ) ; break;
+        case Instructions::INC : inc( instructions[ip].count ) ; break;
+        case Instructions::DEC : dec( instructions[ip].count ) ; break;
+        case Instructions::OUT : out( instructions[ip].count ) ; break;
+        case Instructions::IN : in( instructions[ip].count ) ; break;
+        case Instructions::OPEN : open( instructions[ip].count ) ; break;
+        case Instructions::CLOSE : close( instructions[ip].count ) ; break;
+        case Instructions::ZERO_CELL : zero_cell() ; break;
         default :
           cerr<<"Error in run"<<endl;
+          die = true;
       }
       if( ip >= (int)instructions.size() ) die=true;
     }
   }
 
-  void inc(){
-    ++loc ;
-    if( loc >=  (long int) tape.size() ){ tape.push_back(0); }
+  void zero_cell(){
+    tape[loc]=0;
     ++ip;
   }
 
-  void dec(){
-    --loc ;
+  void inc( int count ){
+    loc += count;
+    if( loc >=  (long int) tape.size() ){ tape.resize( loc+1 ); }
+    ++ip;
+  }
+
+  void dec( int count ){
+    loc -= count;
     if( loc < 0 ){ die = true ; }
     ++ip;
   }
 
-  void plus(){
-    ++tape[loc];
+  void plus( int count ){
+    tape[loc] += count;
     ++ip;
   }
 
-  void minus(){
-    --tape[loc];
+  void minus( int count ){
+    tape[loc] -= count;
     ++ip;
   }
 
-  void out(){
+  void out( int count ){
+    assert( count == 1 );
     os<<tape[loc];
     os.flush();
     ++ip;
   }
 
-  void in(){
+  void in( int count ){
+    assert( count == 1 );
     is>>tape[loc] ;
     if( is.eof() ){
       die=true;
@@ -123,7 +273,8 @@ struct bf{
     ++ip;
   }
 
-  void open(){
+  void open( int count ){
+    assert( count == 1 );
     if( tape[loc] != 0 ){
       loopStack.push_back(ip);
       ++ip;
@@ -132,9 +283,9 @@ struct bf{
         int level = 1;
         while(true){
           ++ip;
-          if( instructions.at(ip) == Instructions::CLOSE ){
+          if( instructions.at(ip).val == Instructions::CLOSE ){
             -- level ;
-          } else if ( Instructions::OPEN == instructions.at(ip) ){
+          } else if ( Instructions::OPEN == instructions.at(ip).val ){
             ++level;
           }
 
@@ -150,7 +301,8 @@ struct bf{
     }
   }
 
-  void close(){
+  void close( int count ){
+    assert( count == 1 );
     ip = loopStack.back();
     loopStack.pop_back();
   }
@@ -248,6 +400,8 @@ void  doSingle ( string fname ){
   string line = streamAsString( is );
 
   b.compile( line );
+  b.optimize();
+  //b.dumpInstructions();
   b.run();
 }
 

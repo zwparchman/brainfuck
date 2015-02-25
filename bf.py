@@ -156,8 +156,12 @@ class Ebf :
 
 
 
-sys.stdin.softspace = False
-e = Ebf( file( "./mantrelblot.b", "rb" ) )
-e.run()
-#print e.instructions
+def main():
+    sys.stdin.softspace = False
+    e = Ebf( file( "./hanoi.b", "rb" ) )
+    e.run()
+    #print e.instructions
+
+if __name__ == "__main__":
+    main()
 
